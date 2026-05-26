@@ -2,7 +2,12 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-title>PULSO</ion-title>
+        <ion-title>
+          <span class="pulso-title-compact">
+            <PulsoMark class="pulso-title-compact__mark" />
+            PULSO
+          </span>
+        </ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -11,157 +16,180 @@
         <ion-toolbar>
           <ion-title size="large">
             <div class="pulso-brand">
-              <div class="pulso-brand__name">PULSO</div>
-              <div class="pulso-brand__tagline">Syncing Fitbit to Apple Health data</div>
+              <PulsoMark class="pulso-brand__mark" />
+              <div class="pulso-brand__text">
+                <div class="pulso-brand__name">PULSO</div>
+                <div class="pulso-brand__tagline">Syncing Fitbit to Apple Health</div>
+              </div>
             </div>
           </ion-title>
         </ion-toolbar>
       </ion-header>
 
       <!-- Auth & Refresh -->
-      <div style="text-align: center; padding: 12px;">
-        <ion-button v-if="!loggedIn" @click="login()">Login to Fitbit</ion-button>
-        <ion-button v-else color="danger" fill="outline" size="small" @click="doLogout()">Logout</ion-button>
-        <ion-button @click="refreshData()" :disabled="!loggedIn">Refresh</ion-button>
+      <div class="pulso-actions">
+        <ion-button v-if="!loggedIn" expand="block" class="pulso-actions__primary" @click="login()">
+          Login to Fitbit
+        </ion-button>
+        <template v-else>
+          <ion-button class="pulso-actions__primary" @click="refreshData()">Refresh</ion-button>
+          <ion-button fill="outline" color="medium" size="small" @click="doLogout()">Logout</ion-button>
+        </template>
       </div>
 
       <!-- Status Banner -->
       <div v-if="syncStatus" class="pulso-banner pulso-banner--status">
+        <span class="pulso-banner__dot" />
         {{ syncStatus }}
       </div>
       <!-- Sleep Status & Tools Banner -->
       <div v-if="loggedIn" class="pulso-banner pulso-banner--tools">
-        <div v-if="sleepError">{{ sleepError }}</div>
-        <div style="margin-top: 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
-          <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14 days</ion-button>
-          <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30 days</ion-button>
+        <div v-if="sleepError" class="pulso-banner__tools-msg">{{ sleepError }}</div>
+        <div class="pulso-banner__tools-actions">
+          <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14d</ion-button>
+          <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30d</ion-button>
           <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
         </div>
       </div>
 
       <!-- Daily Summary -->
-      <ion-card v-if="dailySummary">
-        <ion-card-header>
-          <ion-card-title style="font-size: 1.1em;">Today's Summary</ion-card-title>
+      <ion-card v-if="dailySummary" class="pulso-card pulso-card--summary">
+        <ion-card-header class="pulso-card__header">
+          <ion-card-title class="pulso-card__title">Today's Summary</ion-card-title>
+          <div class="pulso-card__date">{{ formatTodayLabel(dailySummary.date) }}</div>
         </ion-card-header>
-        <ion-card-content>
-          <ion-grid>
-            <ion-row>
-              <ion-col class="summary-stat">
+        <ion-card-content class="pulso-card__content">
+          <div class="pulso-stats">
+            <div class="pulso-stats__grid pulso-stats__grid--hero">
+              <div class="summary-stat summary-stat--hero">
                 <div class="stat-value">{{ dailySummary.steps.toLocaleString() }}</div>
                 <div class="stat-label">Steps</div>
-              </ion-col>
-              <ion-col class="summary-stat">
+              </div>
+              <div class="summary-stat summary-stat--hero">
                 <div class="stat-value">{{ dailySummary.distanceKm.toFixed(1) }}</div>
                 <div class="stat-label">km</div>
-              </ion-col>
-              <ion-col class="summary-stat">
+              </div>
+              <div class="summary-stat summary-stat--hero">
                 <div class="stat-value">{{ dailySummary.caloriesOut.toLocaleString() }}</div>
                 <div class="stat-label">kcal</div>
-              </ion-col>
-            </ion-row>
-            <ion-row>
-              <ion-col class="summary-stat">
+              </div>
+            </div>
+            <div class="pulso-stats__grid">
+              <div class="summary-stat">
                 <div class="stat-value">{{ dailySummary.activeMinutes }}</div>
                 <div class="stat-label">Active min</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.restingHeartRate">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.restingHeartRate">
                 <div class="stat-value">{{ dailySummary.restingHeartRate }}</div>
                 <div class="stat-label">Resting HR</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.sleepMinutes != null">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.sleepMinutes != null">
                 <div class="stat-value">{{ Math.floor(dailySummary.sleepMinutes / 60) }}h {{ dailySummary.sleepMinutes % 60 }}m</div>
                 <div class="stat-label">Sleep</div>
-              </ion-col>
-            </ion-row>
-            <ion-row>
-              <ion-col class="summary-stat" v-if="dailySummary.hrvDaily">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.hrvDaily">
                 <div class="stat-value">{{ Math.round(dailySummary.hrvDaily) }}</div>
                 <div class="stat-label">HRV (ms)</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.spo2">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.spo2">
                 <div class="stat-value">{{ dailySummary.spo2.toFixed(1) }}%</div>
                 <div class="stat-label">SpO2</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.breathingRate">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.breathingRate">
                 <div class="stat-value">{{ dailySummary.breathingRate.toFixed(1) }}</div>
                 <div class="stat-label">Breaths/min</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.skinTemp != null">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.skinTemp != null">
                 <div class="stat-value">{{ dailySummary.skinTemp > 0 ? '+' : '' }}{{ dailySummary.skinTemp.toFixed(1) }}°</div>
                 <div class="stat-label">Skin Temp</div>
-              </ion-col>
-              <ion-col class="summary-stat" v-if="dailySummary.vo2Max">
+              </div>
+              <div class="summary-stat" v-if="dailySummary.vo2Max">
                 <div class="stat-value">{{ dailySummary.vo2Max.toFixed(0) }}</div>
                 <div class="stat-label">VO2 Max</div>
-              </ion-col>
-            </ion-row>
+              </div>
+            </div>
             <!-- Sleep Stages -->
-            <ion-row v-if="dailySummary.sleepStages.length">
-              <ion-col size="12" style="padding-top: 8px;">
-                <div class="stat-label" style="font-size: 0.85em; margin-bottom: 4px;"><strong>Sleep Stages</strong></div>
-              </ion-col>
-              <ion-col v-for="(st, i) in sleepStageSummary" :key="i" class="summary-stat">
-                <div class="stat-value" style="font-size: 1.1em;">{{ Math.round(st.minutes) }}m</div>
-                <div class="stat-label">{{ st.label }}</div>
-              </ion-col>
-            </ion-row>
+            <div v-if="dailySummary.sleepStages.length" class="pulso-stats__group">
+              <div class="pulso-stats__group-title">Sleep Stages</div>
+              <div class="pulso-stats__grid pulso-stats__grid--small">
+                <div v-for="(st, i) in sleepStageSummary" :key="i" class="summary-stat summary-stat--small">
+                  <div class="stat-value">{{ Math.round(st.minutes) }}m</div>
+                  <div class="stat-label">{{ st.label }}</div>
+                </div>
+              </div>
+            </div>
             <!-- Heart Rate Zones -->
-            <ion-row v-if="dailySummary.heartRateZones.length">
-              <ion-col size="12" style="padding-top: 8px;">
-                <div class="stat-label" style="font-size: 0.85em; margin-bottom: 4px;"><strong>Heart Rate Zones</strong></div>
-              </ion-col>
-              <ion-col v-for="zone in dailySummary.heartRateZones.filter(z => z.minutes > 0)" :key="zone.name" class="summary-stat">
-                <div class="stat-value" style="font-size: 1.1em;">{{ zone.minutes }}m</div>
-                <div class="stat-label">{{ zone.name }}</div>
-                <div class="stat-label">{{ zone.min }}-{{ zone.max }} bpm</div>
-              </ion-col>
-            </ion-row>
-          </ion-grid>
+            <div v-if="dailySummary.heartRateZones.length" class="pulso-stats__group">
+              <div class="pulso-stats__group-title">Heart Rate Zones</div>
+              <div class="pulso-stats__grid pulso-stats__grid--small">
+                <div v-for="zone in dailySummary.heartRateZones.filter(z => z.minutes > 0)" :key="zone.name" class="summary-stat summary-stat--small">
+                  <div class="stat-value">{{ zone.minutes }}m</div>
+                  <div class="stat-label">{{ zone.name }}</div>
+                  <div class="stat-sublabel">{{ zone.min }}–{{ zone.max }} bpm</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </ion-card-content>
       </ion-card>
 
       <!-- Auto-Sync Controls -->
-      <ion-card>
-        <ion-card-content>
-          <ion-item lines="none">
+      <ion-card class="pulso-card pulso-card--sync">
+        <ion-card-content class="pulso-card__content">
+          <ion-item lines="none" class="pulso-sync__row">
             <ion-label>
-              <h2>Auto Sync</h2>
-              <p v-if="autoSyncEnabled && lastSyncTime">Last sync: {{ lastSyncTime }}</p>
-              <p v-else-if="autoSyncEnabled">Sync starting...</p>
-              <p v-else>Disabled</p>
+              <h2 class="pulso-sync__title">Auto Sync</h2>
+              <p v-if="autoSyncEnabled && lastSyncTime" class="pulso-sync__meta">Last sync · {{ lastSyncTime }}</p>
+              <p v-else-if="autoSyncEnabled" class="pulso-sync__meta">Sync starting…</p>
+              <p v-else class="pulso-sync__meta pulso-sync__meta--off">Disabled</p>
             </ion-label>
             <ion-toggle :checked="autoSyncEnabled" @ionChange="toggleAutoSync($event)"></ion-toggle>
           </ion-item>
-          <ion-item v-if="autoSyncEnabled" lines="none">
-            <ion-label>Interval (minutes)</ion-label>
+          <ion-item v-if="autoSyncEnabled" lines="none" class="pulso-sync__row">
+            <ion-label class="pulso-sync__interval-label">Interval</ion-label>
             <ion-select :value="syncIntervalMinutes" @ionChange="updateSyncInterval($event)" interface="popover">
-              <ion-select-option :value="5">5</ion-select-option>
-              <ion-select-option :value="15">15</ion-select-option>
-              <ion-select-option :value="30">30</ion-select-option>
-              <ion-select-option :value="60">60</ion-select-option>
+              <ion-select-option :value="5">5 min</ion-select-option>
+              <ion-select-option :value="15">15 min</ion-select-option>
+              <ion-select-option :value="30">30 min</ion-select-option>
+              <ion-select-option :value="60">60 min</ion-select-option>
             </ion-select>
           </ion-item>
         </ion-card-content>
       </ion-card>
 
       <!-- Workouts -->
-      <div v-if="fitbitWorkouts.length">
-        <ion-item>
-          <ion-label><strong>Recent Workouts ({{ fitbitWorkouts.length }})</strong></ion-label>
-        </ion-item>
-        <ion-card v-for="(workout, index) in fitbitWorkouts" :key="index">
-          <ion-card-header>{{ workout.activityName }}</ion-card-header>
-          <ion-card-content>
-            <p>Calories: {{ workout.calories }} kcal</p>
-            <p>Duration: {{ Math.round(workout.duration / 60000) }} min</p>
-            <p v-if="workout.distance">Distance: {{ (workout.distance / 1000).toFixed(2) }} km</p>
-            <p v-if="workout.steps">Steps: {{ workout.steps.toLocaleString() }}</p>
-            <p>{{ new Date(workout.startTime).toLocaleString() }}</p>
-            <div style="text-align: center;">
-              <ion-button size="small" :color="workout.buttonColor" :disabled="workout.isButtonDisabled"
-                @click="saveWorkout(workout)">{{ workout.buttonLabel }}</ion-button>
+      <div v-if="fitbitWorkouts.length" class="pulso-section">
+        <div class="pulso-section__header">
+          <div class="pulso-section__title">Recent Workouts</div>
+          <div class="pulso-section__count">{{ fitbitWorkouts.length }}</div>
+        </div>
+        <ion-card v-for="(workout, index) in fitbitWorkouts" :key="index" class="pulso-card pulso-card--workout">
+          <ion-card-header class="pulso-card__header">
+            <ion-card-title class="pulso-card__title">{{ workout.activityName }}</ion-card-title>
+            <div class="pulso-card__date">{{ new Date(workout.startTime).toLocaleString() }}</div>
+          </ion-card-header>
+          <ion-card-content class="pulso-card__content">
+            <div class="pulso-workout__metrics">
+              <div class="pulso-workout__metric">
+                <div class="stat-value">{{ workout.calories }}</div>
+                <div class="stat-label">kcal</div>
+              </div>
+              <div class="pulso-workout__metric">
+                <div class="stat-value">{{ Math.round(workout.duration / 60000) }}</div>
+                <div class="stat-label">min</div>
+              </div>
+              <div class="pulso-workout__metric" v-if="workout.distance">
+                <div class="stat-value">{{ (workout.distance / 1000).toFixed(2) }}</div>
+                <div class="stat-label">km</div>
+              </div>
+              <div class="pulso-workout__metric" v-if="workout.steps">
+                <div class="stat-value">{{ workout.steps.toLocaleString() }}</div>
+                <div class="stat-label">Steps</div>
+              </div>
             </div>
+            <ion-button class="pulso-workout__cta" expand="block" size="small"
+              :color="workout.buttonColor" :disabled="workout.isButtonDisabled"
+              @click="saveWorkout(workout)">{{ workout.buttonLabel }}</ion-button>
           </ion-card-content>
         </ion-card>
       </div>
@@ -176,6 +204,7 @@ import {
   IonToggle, IonSelect, IonSelectOption, IonGrid, IonRow, IonCol,
 } from '@ionic/vue';
 import { HealthKit } from '@ionic-native/health-kit';
+import PulsoMark from '../components/PulsoMark.vue';
 </script>
 
 <script lang="ts">
@@ -202,6 +231,7 @@ export default defineComponent({
     IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonItem, IonLabel,
     IonCardContent, IonCardHeader, IonCardTitle, IonCard, IonButton,
     IonToggle, IonSelect, IonSelectOption, IonGrid, IonRow, IonCol,
+    PulsoMark,
   },
   data() {
     return {
@@ -220,6 +250,13 @@ export default defineComponent({
     };
   },
   async created() {
+    // Dev-only: ?demo=1 injects mock data so designers can iterate on the UI
+    // without going through the Fitbit OAuth flow.
+    if (import.meta.env.DEV && typeof window !== 'undefined' && window.location.search.includes('demo=1')) {
+      this.loadDemoFixtures();
+      return;
+    }
+
     this.loggedIn = await fitbit.isLoggedIn();
     this.syncStatus = this.loggedIn ? 'Logged in' : 'Not logged in';
 
@@ -470,6 +507,65 @@ export default defineComponent({
     },
     formatDateStr(d: Date): string {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    loadDemoFixtures() {
+      const today = this.formatDateStr(new Date());
+      this.loggedIn = true;
+      this.syncStatus = 'Saved to Apple Health: steps + distance + sleep';
+      this.lastSyncTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      this.autoSyncEnabled = true;
+      this.syncIntervalMinutes = 15;
+      this.sleepError = '23:42–07:18 (asleep 412m, 38 stages): SAVED 38 stages (replaced 0)';
+      this.dailySummary = {
+        date: today,
+        steps: 11248,
+        distanceKm: 8.4,
+        caloriesOut: 2647,
+        activeMinutes: 64,
+        restingHeartRate: 58,
+        heartRateZones: [
+          { name: 'Out of Range', min: 30, max: 97, minutes: 1142, caloriesOut: 1820 },
+          { name: 'Fat Burn', min: 97, max: 136, minutes: 184, caloriesOut: 612 },
+          { name: 'Cardio', min: 136, max: 166, minutes: 38, caloriesOut: 192 },
+          { name: 'Peak', min: 166, max: 220, minutes: 9, caloriesOut: 58 },
+        ],
+        heartRateIntraday: [],
+        sleepMinutes: 412,
+        sleepStart: `${today}T23:42:00`,
+        sleepEnd: `${today}T07:18:00`,
+        sleepStages: [
+          { stage: 'deep', startTime: '', endTime: '', seconds: 78 * 60 },
+          { stage: 'light', startTime: '', endTime: '', seconds: 226 * 60 },
+          { stage: 'rem', startTime: '', endTime: '', seconds: 108 * 60 },
+          { stage: 'wake', startTime: '', endTime: '', seconds: 34 * 60 },
+        ],
+        sleepLogs: [],
+        hrvDaily: 47,
+        spo2: 96.4,
+        breathingRate: 14.2,
+        skinTemp: -0.3,
+        vo2Max: 42,
+      };
+      this.fitbitWorkouts = [
+        {
+          logId: 1, activityName: 'Outdoor Run', calories: 612, duration: 38 * 60 * 1000,
+          distance: 6420, steps: 7912, startTime: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+          buttonLabel: 'Saved!', buttonColor: 'success', isButtonDisabled: true,
+        },
+        {
+          logId: 2, activityName: 'Indoor Cycle', calories: 384, duration: 45 * 60 * 1000,
+          distance: 14200, steps: 0, startTime: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
+          buttonLabel: 'Save to Apple Health', buttonColor: 'tertiary', isButtonDisabled: false,
+        },
+      ];
+    },
+    formatTodayLabel(dateStr: string): string {
+      try {
+        const d = new Date(dateStr + 'T00:00:00');
+        return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+      } catch {
+        return dateStr;
+      }
     },
 
     async autoSaveAll() {
@@ -838,74 +934,393 @@ export default defineComponent({
 </script>
 
 <style scoped>
-/* --- PULSO brand header --- */
+/* ============================================================
+   PULSO design tokens (scoped to view)
+   Accent #FF4500 · Deep #011D22 · Light #FCFCFC
+   Space Mono — brand, headings, numbers · Open Sans — body
+   ============================================================ */
+
+ion-content {
+  --background: var(--ion-background-color);
+  --overflow: hidden auto;
+}
+
+/* --- Compact title in collapsed toolbar --- */
+.pulso-title-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ion-text-color);
+}
+.pulso-title-compact__mark {
+  font-size: 1.4em;
+}
+
+/* --- Large brand header (collapse=condense) --- */
+:deep(.header-collapse-condense ion-toolbar) {
+  --min-height: 130px;
+  --padding-top: 8px;
+  --padding-bottom: 8px;
+}
+:deep(.header-collapse-condense ion-title) {
+  --padding-top: 20px;
+  --padding-bottom: 16px;
+}
 .pulso-brand {
   display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  min-width: 0;
+}
+.pulso-brand__mark {
+  font-size: 36px;
+}
+.pulso-brand__text {
+  display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  line-height: 1;
+  min-width: 0;
 }
 .pulso-brand__name {
   font-family: var(--ion-font-family);
   font-weight: 700;
+  font-size: 26px;
   letter-spacing: -0.02em;
   line-height: 1;
+  color: var(--ion-text-color);
 }
 .pulso-brand__tagline {
   font-family: var(--font-secondary);
-  font-weight: 400;
-  font-size: 0.42em;
-  letter-spacing: 0.01em;
-  opacity: 0.7;
-  margin-top: 2px;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ion-color-medium);
+  line-height: 1.3;
+  white-space: normal;
+}
+
+/* --- Actions row --- */
+.pulso-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 12px 16px 4px;
+}
+.pulso-actions ion-button {
+  --border-radius: 12px;
+  --box-shadow: none;
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  margin: 0;
+  height: 44px;
+}
+.pulso-actions__primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  --background: var(--pulso-accent);
+  --background-hover: var(--ion-color-primary-shade);
+  --color: var(--pulso-light);
 }
 
 /* --- Banners --- */
 .pulso-banner {
-  text-align: center;
-  margin: 8px;
-  border-radius: 10px;
+  margin: 12px 16px;
+  border-radius: 14px;
   font-family: var(--font-secondary);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .pulso-banner--status {
-  padding: 8px 16px;
-  background: var(--ion-color-primary);
-  color: var(--ion-color-primary-contrast);
-  font-size: 0.85em;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--pulso-accent);
+  color: var(--pulso-light);
+  font-family: var(--ion-font-family);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: center;
+  word-break: break-word;
+  min-width: 0;
+}
+.pulso-banner--status > * {
+  min-width: 0;
+}
+.pulso-banner__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pulso-light);
+  box-shadow: 0 0 0 0 rgba(252, 252, 252, 0.6);
+  animation: pulso-pulse 1.6s ease-out infinite;
+}
+@keyframes pulso-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(252, 252, 252, 0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(252, 252, 252, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(252, 252, 252, 0); }
 }
 .pulso-banner--tools {
-  padding: 10px 14px;
-  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  padding: 12px 14px;
+  background: rgba(var(--ion-color-primary-rgb), 0.06);
   color: var(--ion-text-color);
-  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.25);
-  font-size: 0.95em;
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.18);
+  font-size: 13px;
+}
+.pulso-banner__tools-msg {
+  margin-bottom: 10px;
+  color: var(--ion-color-medium);
+  font-size: 12px;
+  text-align: center;
+}
+.pulso-banner__tools-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pulso-banner__tools-actions ion-button {
+  --border-color: var(--pulso-accent);
+  --color: var(--pulso-accent);
+  --border-radius: 8px;
+  font-family: var(--ion-font-family);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  margin: 0;
+  --padding-start: 4px;
+  --padding-end: 4px;
+  min-width: 0;
 }
 
-/* --- Stat grid --- */
+/* --- Cards --- */
+.pulso-card {
+  margin: 12px 16px;
+  border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(1, 29, 34, 0.04), 0 4px 16px rgba(1, 29, 34, 0.05);
+  overflow: hidden;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+}
+.pulso-card__header {
+  padding: 16px 18px 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pulso-card__title {
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ion-text-color);
+  margin: 0;
+  padding: 0;
+}
+.pulso-card__date {
+  font-family: var(--font-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ion-color-medium);
+  text-transform: uppercase;
+}
+.pulso-card__content {
+  padding: 8px 12px 14px;
+}
+.pulso-card--summary {
+  border-left: 3px solid var(--pulso-accent);
+}
+
+/* --- Stat grid (CSS grid, wraps without overflow) --- */
+.pulso-stats {
+  display: flex;
+  flex-direction: column;
+}
+.pulso-stats__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px 4px;
+}
+.pulso-stats__grid--hero {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(var(--ion-color-medium-rgb), 0.18);
+}
+.pulso-stats__grid--small {
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  padding: 4px 0 0;
+}
+.pulso-stats__grid + .pulso-stats__grid {
+  border-top: 1px dashed rgba(var(--ion-color-medium-rgb), 0.18);
+  margin-top: 2px;
+  padding-top: 10px;
+}
 .summary-stat {
   text-align: center;
   padding: 8px 4px;
+  min-width: 0;
+  overflow: hidden;
 }
 .stat-value {
-  font-family: var(--ion-font-family); /* Space Mono — feels right for numbers */
-  font-size: 1.3em;
+  font-family: var(--ion-font-family);
+  font-size: 20px;
   font-weight: 700;
-  color: var(--ion-color-primary);
-  letter-spacing: -0.01em;
+  color: var(--pulso-accent);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.summary-stat--hero .stat-value {
+  font-size: 24px;
+}
+.summary-stat--small .stat-value {
+  font-size: 16px;
 }
 .stat-label {
   font-family: var(--font-secondary);
-  font-size: 0.75em;
+  font-size: 10px;
   color: var(--ion-color-medium);
-  margin-top: 2px;
+  margin-top: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-sublabel {
+  font-family: var(--ion-font-family);
+  font-size: 9px;
+  color: var(--ion-color-medium);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.pulso-stats__group {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.14);
+}
+.pulso-stats__group-title {
+  font-family: var(--ion-font-family);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ion-text-color);
+  opacity: 0.6;
+  padding: 0 4px 6px;
 }
 
-/* --- Body copy inside cards uses the secondary (legibility) font --- */
-ion-card-content p {
+/* --- Auto-sync card --- */
+.pulso-card--sync .pulso-sync__row {
+  --background: transparent;
+  --padding-start: 6px;
+  --inner-padding-end: 6px;
+  --min-height: 44px;
+}
+.pulso-sync__title {
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ion-text-color);
+  margin: 0;
+}
+.pulso-sync__meta {
   font-family: var(--font-secondary);
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  margin-top: 2px;
+}
+.pulso-sync__meta--off {
+  color: var(--ion-color-medium);
+  opacity: 0.7;
+}
+.pulso-sync__interval-label {
+  font-family: var(--ion-font-family);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ion-text-color);
+}
+ion-toggle {
+  --handle-background-checked: var(--pulso-light);
+  --background-checked: var(--pulso-accent);
+}
+
+/* --- Section header (e.g. Recent Workouts) --- */
+.pulso-section {
+  margin-top: 8px;
+}
+.pulso-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18px 22px 6px;
+}
+.pulso-section__title {
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ion-text-color);
+}
+.pulso-section__count {
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pulso-accent);
+  background: rgba(var(--ion-color-primary-rgb), 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* --- Workout cards --- */
+.pulso-workout__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  gap: 6px;
+  padding: 4px 0 14px;
+}
+.pulso-workout__metric {
+  text-align: center;
+  padding: 6px 4px;
+}
+.pulso-workout__metric .stat-value {
+  font-size: 22px;
+}
+.pulso-workout__cta {
+  --border-radius: 10px;
+  --box-shadow: none;
+  margin: 0;
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 12px;
 }
 </style>
