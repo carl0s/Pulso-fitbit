@@ -2,14 +2,19 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-title>Fitbit to Apple Health</ion-title>
+        <ion-title>PULSO</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content :fullscreen="true">
       <ion-header collapse="condense">
         <ion-toolbar>
-          <ion-title size="large">Fitbit to Apple Health</ion-title>
+          <ion-title size="large">
+            <div class="pulso-brand">
+              <div class="pulso-brand__name">PULSO</div>
+              <div class="pulso-brand__tagline">Syncing Fitbit to Apple Health data</div>
+            </div>
+          </ion-title>
         </ion-toolbar>
       </ion-header>
 
@@ -21,16 +26,16 @@
       </div>
 
       <!-- Status Banner -->
-      <div v-if="syncStatus" style="text-align: center; padding: 8px 16px; background: var(--ion-color-primary); color: #fff; margin: 8px; border-radius: 8px; font-size: 0.85em;">
+      <div v-if="syncStatus" class="pulso-banner pulso-banner--status">
         {{ syncStatus }}
       </div>
       <!-- Sleep Status & Tools Banner -->
-      <div v-if="loggedIn" style="text-align: center; padding: 10px 14px; background: #2b2416; color: #ffd27a; border: 1px solid #4a3a1a; margin: 8px; border-radius: 8px; font-size: 0.95em; line-height: 1.35;">
+      <div v-if="loggedIn" class="pulso-banner pulso-banner--tools">
         <div v-if="sleepError">{{ sleepError }}</div>
         <div style="margin-top: 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
-          <ion-button size="small" fill="outline" color="light" @click="restoreSleepHistory(14)">Restore 14 days</ion-button>
-          <ion-button size="small" fill="outline" color="light" @click="restoreSleepHistory(30)">Restore 30 days</ion-button>
-          <ion-button size="small" fill="outline" color="light" @click="resetSleepData()">Reset & Resave</ion-button>
+          <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14 days</ion-button>
+          <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30 days</ion-button>
+          <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
         </div>
       </div>
 
@@ -215,7 +220,7 @@ export default defineComponent({
     };
   },
   async created() {
-    this.loggedIn = fitbit.isLoggedIn();
+    this.loggedIn = await fitbit.isLoggedIn();
     this.syncStatus = this.loggedIn ? 'Logged in' : 'Not logged in';
 
     const savedAutoSync = localStorage.getItem('autoSyncEnabled');
@@ -342,8 +347,8 @@ export default defineComponent({
         this.syncStatus = 'Login error: ' + err.message;
       }
     },
-    doLogout() {
-      fitbit.logout();
+    async doLogout() {
+      await fitbit.logout();
       this.loggedIn = false;
       this.fitbitWorkouts = [];
       this.dailySummary = null;
@@ -833,18 +838,74 @@ export default defineComponent({
 </script>
 
 <style scoped>
+/* --- PULSO brand header --- */
+.pulso-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pulso-brand__name {
+  font-family: var(--ion-font-family);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.pulso-brand__tagline {
+  font-family: var(--font-secondary);
+  font-weight: 400;
+  font-size: 0.42em;
+  letter-spacing: 0.01em;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+/* --- Banners --- */
+.pulso-banner {
+  text-align: center;
+  margin: 8px;
+  border-radius: 10px;
+  font-family: var(--font-secondary);
+  line-height: 1.35;
+}
+.pulso-banner--status {
+  padding: 8px 16px;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pulso-banner--tools {
+  padding: 10px 14px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-text-color);
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.25);
+  font-size: 0.95em;
+}
+
+/* --- Stat grid --- */
 .summary-stat {
   text-align: center;
   padding: 8px 4px;
 }
 .stat-value {
+  font-family: var(--ion-font-family); /* Space Mono — feels right for numbers */
   font-size: 1.3em;
   font-weight: 700;
   color: var(--ion-color-primary);
+  letter-spacing: -0.01em;
 }
 .stat-label {
+  font-family: var(--font-secondary);
   font-size: 0.75em;
-  color: #888;
+  color: var(--ion-color-medium);
   margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* --- Body copy inside cards uses the secondary (legibility) font --- */
+ion-card-content p {
+  font-family: var(--font-secondary);
 }
 </style>

@@ -1016,6 +1016,11 @@
   resolved "https://registry.npmjs.org/@capacitor/keyboard/-/keyboard-5.0.4.tgz"
   integrity sha512-vIv2NLZRBXgMDkyZurFpANCe7pEbpChdXNGdQFnk1Kg31DFScgwmq4ednZwT4+SHojH6SHCXxaBPg7Y265LWVQ==
 
+"@capacitor/preferences@5":
+  version "5.0.8"
+  resolved "https://registry.yarnpkg.com/@capacitor/preferences/-/preferences-5.0.8.tgz#46ba54432d7c5b248b7a91736c9718a6b736198f"
+  integrity sha512-zzz8JC2NuZ+xdBP2Cfhu4uyRUMAFoxMl7l8w5ahQPzckyt7Fk/pWATXj6IcTm7DzbsKc8ryXSsYTkv9ZL3Pfmw==
+
 "@capacitor/status-bar@5.0.2":
   version "5.0.2"
   resolved "https://registry.npmjs.org/@capacitor/status-bar/-/status-bar-5.0.2.tgz"

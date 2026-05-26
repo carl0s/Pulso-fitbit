@@ -3,6 +3,7 @@
  * Runs entirely on-device, no backend required.
  */
 import { Browser } from '@capacitor/browser';
+import { Preferences } from '@capacitor/preferences';
 
 const CLIENT_ID = '23VCLS';
 // Must match exactly what's configured in Fitbit Developer dashboard
@@ -56,24 +57,52 @@ async function generatePKCEChallenge(verifier: string): Promise<{ challenge: str
   return { challenge: verifier, method: 'plain' };
 }
 
-// --- Token persistence ---
+// --- Token persistence (Capacitor Preferences = UserDefaults on iOS, persists across iOS WebView cache purges that nuke localStorage) ---
 
-function saveTokens(tokens: FitbitTokens): void {
-  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+async function saveTokens(tokens: FitbitTokens): Promise<void> {
+  await Preferences.set({ key: TOKEN_STORAGE_KEY, value: JSON.stringify(tokens) });
 }
 
-function loadTokens(): FitbitTokens | null {
-  const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+async function loadTokens(): Promise<FitbitTokens | null> {
+  const { value } = await Preferences.get({ key: TOKEN_STORAGE_KEY });
+  if (value) {
+    try { return JSON.parse(value); } catch { return null; }
   }
+  // One-shot migration: pull legacy tokens out of localStorage so existing users
+  // don't get logged out by this very fix
+  const legacy = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (legacy) {
+    try {
+      const parsed = JSON.parse(legacy) as FitbitTokens;
+      await Preferences.set({ key: TOKEN_STORAGE_KEY, value: legacy });
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return parsed;
+    } catch {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  }
+  return null;
 }
 
-function clearTokens(): void {
+async function clearTokens(): Promise<void> {
+  await Preferences.remove({ key: TOKEN_STORAGE_KEY });
   localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+async function saveVerifier(verifier: string): Promise<void> {
+  await Preferences.set({ key: VERIFIER_STORAGE_KEY, value: verifier });
+}
+
+async function loadVerifier(): Promise<string | null> {
+  const { value } = await Preferences.get({ key: VERIFIER_STORAGE_KEY });
+  if (value) return value;
+  // Migration fallback for an in-flight login started before this update
+  return localStorage.getItem(VERIFIER_STORAGE_KEY);
+}
+
+async function clearVerifier(): Promise<void> {
+  await Preferences.remove({ key: VERIFIER_STORAGE_KEY });
+  localStorage.removeItem(VERIFIER_STORAGE_KEY);
 }
 
 function isTokenExpired(tokens: FitbitTokens): boolean {
@@ -85,7 +114,7 @@ function isTokenExpired(tokens: FitbitTokens): boolean {
 
 export async function startLogin(): Promise<void> {
   const codeVerifier = generateRandomString(64);
-  localStorage.setItem(VERIFIER_STORAGE_KEY, codeVerifier);
+  await saveVerifier(codeVerifier);
 
   const { challenge, method } = await generatePKCEChallenge(codeVerifier);
 
@@ -103,7 +132,7 @@ export async function startLogin(): Promise<void> {
 }
 
 export async function handleCallback(code: string): Promise<FitbitTokens> {
-  const codeVerifier = localStorage.getItem(VERIFIER_STORAGE_KEY);
+  const codeVerifier = await loadVerifier();
   if (!codeVerifier) {
     throw new Error('Missing PKCE code verifier. Please login again.');
   }
@@ -134,13 +163,13 @@ export async function handleCallback(code: string): Promise<FitbitTokens> {
     expires_at: Date.now() + data.expires_in * 1000,
   };
 
-  saveTokens(tokens);
-  localStorage.removeItem(VERIFIER_STORAGE_KEY);
+  await saveTokens(tokens);
+  await clearVerifier();
   return tokens;
 }
 
 async function refreshTokens(): Promise<FitbitTokens> {
-  const current = loadTokens();
+  const current = await loadTokens();
   if (!current?.refresh_token) {
     throw new Error('No refresh token. Please login to Fitbit.');
   }
@@ -151,15 +180,32 @@ async function refreshTokens(): Promise<FitbitTokens> {
     client_id: CLIENT_ID,
   });
 
-  const response = await fetch('https://api.fitbit.com/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch('https://api.fitbit.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch (networkErr: any) {
+    // Network failure / offline: keep tokens, surface error so caller can retry
+    throw new Error(`Token refresh network error: ${networkErr?.message || networkErr}`);
+  }
 
   if (!response.ok) {
-    clearTokens();
-    throw new Error('Token refresh failed. Please login again.');
+    // Only clear tokens on definitive OAuth errors (refresh token rejected by Fitbit).
+    // 429 (rate limit), 5xx (server), and transient errors must NOT wipe the session —
+    // the previous behavior caused "app no longer available" after a single bad request.
+    const errBody = await response.json().catch(() => ({} as any));
+    const errType: string = errBody?.errors?.[0]?.errorType || '';
+    const isAuthDead =
+      (response.status === 400 || response.status === 401) &&
+      (errType === 'invalid_grant' || errType === 'invalid_token' || errType === 'invalid_client');
+    if (isAuthDead) {
+      await clearTokens();
+      throw new Error('Fitbit authorization expired. Please login again.');
+    }
+    throw new Error(`Token refresh failed (${response.status}). Will retry on next request.`);
   }
 
   const data = await response.json();
@@ -169,13 +215,13 @@ async function refreshTokens(): Promise<FitbitTokens> {
     expires_at: Date.now() + data.expires_in * 1000,
   };
 
-  saveTokens(tokens);
+  await saveTokens(tokens);
   return tokens;
 }
 
 /** Get a valid access token, refreshing if needed */
 export async function getAccessToken(): Promise<string> {
-  let tokens = loadTokens();
+  let tokens = await loadTokens();
   if (!tokens) {
     throw new Error('Not authenticated. Please login to Fitbit.');
   }
@@ -186,13 +232,13 @@ export async function getAccessToken(): Promise<string> {
 }
 
 /** Check if user is logged in (has stored tokens) */
-export function isLoggedIn(): boolean {
-  return loadTokens() !== null;
+export async function isLoggedIn(): Promise<boolean> {
+  return (await loadTokens()) !== null;
 }
 
 /** Logout - clear stored tokens */
-export function logout(): void {
-  clearTokens();
+export async function logout(): Promise<void> {
+  await clearTokens();
 }
 
 // --- Fitbit API calls ---
