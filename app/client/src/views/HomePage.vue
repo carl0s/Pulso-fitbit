@@ -678,10 +678,17 @@ export default defineComponent({
       }
 
       // HRV
+      // Fitbit only exposes daily RMSSD; HealthKit only has an SDNN HRV type, so we map
+      // RMSSD -> SDNN. The absolute value won't match a native Apple Watch reading, but
+      // recovery apps (Bevel etc.) build a personal baseline from your own data, so a
+      // consistent series is what matters.
+      // Crucially, those apps read HRV from the overnight/morning window. Stamp the sample
+      // at wake time (end of main sleep) instead of midday, otherwise it falls outside the
+      // sleep window and gets ignored. Fall back to early morning when sleep data is missing.
       if (s.hrvDaily && !alreadySaved.includes('hrv')) {
-        const midday = new Date(s.date + 'T12:00:00');
-        const middayEnd = new Date(s.date + 'T12:00:01');
-        if (await this.trySaveQuantity('HKQuantityTypeIdentifierHeartRateVariabilitySDNN', 'ms', s.hrvDaily, midday, middayEnd)) {
+        const hrvTime = this.overnightTimestamp(s);
+        const hrvEnd = new Date(hrvTime.getTime() + 1000);
+        if (await this.trySaveQuantity('HKQuantityTypeIdentifierHeartRateVariabilitySDNN', 'ms', s.hrvDaily, hrvTime, hrvEnd)) {
           this.markItemSaved(s.date, 'hrv');
           saved.push('HRV');
         }
@@ -795,6 +802,15 @@ export default defineComponent({
         return false; // Can't check, assume no data
       }
     },
+    // Best timestamp for an overnight/morning metric (HRV): the wake time at the end of
+    // the main sleep, so recovery apps that scan the sleep window pick it up. Falls back to
+    // 04:00 local on the summary date when sleep data is unavailable or unparseable.
+    overnightTimestamp(s: any): Date {
+      const fallback = new Date(s.date + 'T04:00:00');
+      const end = s.sleepEnd ? new Date(s.sleepEnd) : null;
+      return end && !isNaN(end.getTime()) ? end : fallback;
+    },
+
     async trySaveQuantity(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<boolean> {
       try {
         // Check HealthKit for existing data first to prevent duplicates
