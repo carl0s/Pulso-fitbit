@@ -468,6 +468,33 @@ function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Lightweight fetch for HRV re-sync: just the daily RMSSD plus the main-sleep wake time
+// (used to stamp the HRV sample inside the overnight window). Avoids the full daily summary
+// so a multi-day re-sync stays well under Fitbit's hourly rate limit. Throws on HTTP 429 so
+// the caller can stop and report a rate-limit instead of silently skipping days.
+export async function fetchHrvDaily(dateStr: string): Promise<{ hrvDaily: number | null; sleepEnd: string | null }> {
+  let hrvDaily: number | null = null;
+  let sleepEnd: string | null = null;
+
+  const hrvRes = await fitbitFetch(`https://api.fitbit.com/1/user/-/hrv/date/${dateStr}.json`);
+  if (hrvRes.status === 429) throw new Error('429 rate limited');
+  if (hrvRes.ok) {
+    const hrvData = await hrvRes.json();
+    hrvDaily = hrvData.hrv?.[0]?.value?.dailyRmssd || null;
+  }
+
+  const sleepRes = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${dateStr}.json`);
+  if (sleepRes.status === 429) throw new Error('429 rate limited');
+  if (sleepRes.ok) {
+    const sleepData = await sleepRes.json();
+    const logs = sleepData.sleep || [];
+    const mainSleep = logs.find((l: any) => l.isMainSleep) || logs[0];
+    if (mainSleep) sleepEnd = mainSleep.endTime;
+  }
+
+  return { hrvDaily, sleepEnd };
+}
+
 export let lastApiDebug = '';
 
 export async function fetchWorkouts(): Promise<any[]> {

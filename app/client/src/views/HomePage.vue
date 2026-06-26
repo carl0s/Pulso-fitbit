@@ -49,6 +49,7 @@
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14d</ion-button>
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30d</ion-button>
           <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
+          <ion-button size="small" fill="outline" @click="resyncHrvHistory(30)">Re-sync HRV 30d</ion-button>
         </div>
       </div>
 
@@ -454,6 +455,45 @@ export default defineComponent({
         }
       }
       this.sleepError = `Restore complete: ${totalSaved} night${totalSaved !== 1 ? 's' : ''} saved (${totalStages} stages), ${totalErrors} errors`;
+    },
+    // One-time migration: HRV used to be written at midday, outside the sleep window that
+    // recovery apps (Bevel) scan, so it was ignored. Delete all app-authored HRV samples and
+    // re-write them stamped at wake time over the last `days` days.
+    async resyncHrvHistory(days = 30) {
+      const HRV_TYPE = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
+      try {
+        this.sleepError = 'Deleting old HRV samples from Apple Health...';
+        const del = await SleepPlugin.deleteAppQuantitySamples({ sampleType: HRV_TYPE });
+
+        let saved = 0;
+        let errors = 0;
+        for (let i = 0; i < days; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = this.formatDateStr(d);
+          this.sleepError = `Re-syncing HRV ${dateStr} (${i + 1}/${days})...`;
+          try {
+            const { hrvDaily, sleepEnd } = await fitbit.fetchHrvDaily(dateStr);
+            if (hrvDaily) {
+              const hrvTime = this.overnightTimestamp({ date: dateStr, sleepEnd });
+              const hrvEnd = new Date(hrvTime.getTime() + 1000);
+              if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, hrvTime, hrvEnd)) {
+                this.markItemSaved(dateStr, 'hrv');
+                saved++;
+              }
+            }
+          } catch (e: any) {
+            errors++;
+            if (e?.message?.includes('429') || e?.message?.includes('rate')) {
+              this.sleepError = `Rate limited at ${dateStr}. Wait 1h and retry. HRV days saved: ${saved} (deleted ${del.deleted})`;
+              return;
+            }
+          }
+        }
+        this.sleepError = `HRV re-sync complete: deleted ${del.deleted}, saved ${saved} day${saved !== 1 ? 's' : ''} at wake time, ${errors} errors`;
+      } catch (e: any) {
+        this.sleepError = 'HRV re-sync failed: ' + (e?.message || String(e));
+      }
     },
     scheduleSleepRetry() {
       if (this.sleepRetryTimerId) clearTimeout(this.sleepRetryTimerId);
