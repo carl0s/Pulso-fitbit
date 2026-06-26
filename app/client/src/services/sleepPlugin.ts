@@ -13,6 +13,11 @@ interface SleepPluginInterface {
     stages: SleepStageInput[];
   }): Promise<{ saved: boolean; verified: boolean; stagesSaved: number; replaced: number }>;
   deleteAppSleepSamples(): Promise<{ deleted: number }>;
+  deleteAppQuantitySamples(options: {
+    sampleType: string;   // HKQuantityTypeIdentifier, e.g. 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN'
+    startDate?: number;   // unix seconds, optional window start
+    endDate?: number;     // unix seconds, optional window end
+  }): Promise<{ deleted: number }>;
 }
 
 const SleepPlugin = registerPlugin<SleepPluginInterface>('SleepPlugin');

@@ -44,6 +44,57 @@ public class SleepPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
+    // Delete quantity samples authored by this app (HKSource.default()) for a given
+    // HKQuantityTypeIdentifier, optionally constrained to a [startDate, endDate] window.
+    // Used to clean up HRV samples written at the wrong timestamp before re-syncing them.
+    @objc func deleteAppQuantitySamples(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("HealthKit not available")
+            return
+        }
+        guard let typeId = call.getString("sampleType") else {
+            call.reject("sampleType identifier is required")
+            return
+        }
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeId)) else {
+            call.reject("Unknown quantity type: \(typeId)")
+            return
+        }
+
+        var predicates: [NSPredicate] = [HKQuery.predicateForObjects(from: HKSource.default())]
+        if let start = call.getDouble("startDate"), let end = call.getDouble("endDate") {
+            predicates.append(HKQuery.predicateForSamples(
+                withStart: Date(timeIntervalSince1970: start),
+                end: Date(timeIntervalSince1970: end),
+                options: []))
+        }
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+
+        let query = HKSampleQuery(
+            sampleType: quantityType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: nil
+        ) { _, samples, error in
+            if let error = error {
+                call.reject("Delete query failed: \(error.localizedDescription)")
+                return
+            }
+            guard let samples = samples, !samples.isEmpty else {
+                call.resolve(["deleted": 0])
+                return
+            }
+            self.healthStore.delete(samples) { success, deleteError in
+                if success {
+                    call.resolve(["deleted": samples.count])
+                } else {
+                    call.reject("Delete failed: \(deleteError?.localizedDescription ?? "unknown")")
+                }
+            }
+        }
+        healthStore.execute(query)
+    }
+
     @objc func saveSleepStages(_ call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("HealthKit not available")

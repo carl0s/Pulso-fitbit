@@ -49,6 +49,7 @@
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14d</ion-button>
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30d</ion-button>
           <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
+          <ion-button size="small" fill="outline" @click="resyncHrvHistory(30)">Re-sync HRV 30d</ion-button>
         </div>
       </div>
 
@@ -455,6 +456,45 @@ export default defineComponent({
       }
       this.sleepError = `Restore complete: ${totalSaved} night${totalSaved !== 1 ? 's' : ''} saved (${totalStages} stages), ${totalErrors} errors`;
     },
+    // One-time migration: HRV used to be written at midday, outside the sleep window that
+    // recovery apps (Bevel) scan, so it was ignored. Delete all app-authored HRV samples and
+    // re-write them stamped at wake time over the last `days` days.
+    async resyncHrvHistory(days = 30) {
+      const HRV_TYPE = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
+      try {
+        this.sleepError = 'Deleting old HRV samples from Apple Health...';
+        const del = await SleepPlugin.deleteAppQuantitySamples({ sampleType: HRV_TYPE });
+
+        let saved = 0;
+        let errors = 0;
+        for (let i = 0; i < days; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = this.formatDateStr(d);
+          this.sleepError = `Re-syncing HRV ${dateStr} (${i + 1}/${days})...`;
+          try {
+            const { hrvDaily, sleepEnd } = await fitbit.fetchHrvDaily(dateStr);
+            if (hrvDaily) {
+              const hrvTime = this.overnightTimestamp({ date: dateStr, sleepEnd });
+              const hrvEnd = new Date(hrvTime.getTime() + 1000);
+              if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, hrvTime, hrvEnd)) {
+                this.markItemSaved(dateStr, 'hrv');
+                saved++;
+              }
+            }
+          } catch (e: any) {
+            errors++;
+            if (e?.message?.includes('429') || e?.message?.includes('rate')) {
+              this.sleepError = `Rate limited at ${dateStr}. Wait 1h and retry. HRV days saved: ${saved} (deleted ${del.deleted})`;
+              return;
+            }
+          }
+        }
+        this.sleepError = `HRV re-sync complete: deleted ${del.deleted}, saved ${saved} day${saved !== 1 ? 's' : ''} at wake time, ${errors} errors`;
+      } catch (e: any) {
+        this.sleepError = 'HRV re-sync failed: ' + (e?.message || String(e));
+      }
+    },
     scheduleSleepRetry() {
       if (this.sleepRetryTimerId) clearTimeout(this.sleepRetryTimerId);
       this.sleepRetryTimerId = setTimeout(async () => {
@@ -678,10 +718,17 @@ export default defineComponent({
       }
 
       // HRV
+      // Fitbit only exposes daily RMSSD; HealthKit only has an SDNN HRV type, so we map
+      // RMSSD -> SDNN. The absolute value won't match a native Apple Watch reading, but
+      // recovery apps (Bevel etc.) build a personal baseline from your own data, so a
+      // consistent series is what matters.
+      // Crucially, those apps read HRV from the overnight/morning window. Stamp the sample
+      // at wake time (end of main sleep) instead of midday, otherwise it falls outside the
+      // sleep window and gets ignored. Fall back to early morning when sleep data is missing.
       if (s.hrvDaily && !alreadySaved.includes('hrv')) {
-        const midday = new Date(s.date + 'T12:00:00');
-        const middayEnd = new Date(s.date + 'T12:00:01');
-        if (await this.trySaveQuantity('HKQuantityTypeIdentifierHeartRateVariabilitySDNN', 'ms', s.hrvDaily, midday, middayEnd)) {
+        const hrvTime = this.overnightTimestamp(s);
+        const hrvEnd = new Date(hrvTime.getTime() + 1000);
+        if (await this.trySaveQuantity('HKQuantityTypeIdentifierHeartRateVariabilitySDNN', 'ms', s.hrvDaily, hrvTime, hrvEnd)) {
           this.markItemSaved(s.date, 'hrv');
           saved.push('HRV');
         }
@@ -795,6 +842,15 @@ export default defineComponent({
         return false; // Can't check, assume no data
       }
     },
+    // Best timestamp for an overnight/morning metric (HRV): the wake time at the end of
+    // the main sleep, so recovery apps that scan the sleep window pick it up. Falls back to
+    // 04:00 local on the summary date when sleep data is unavailable or unparseable.
+    overnightTimestamp(s: any): Date {
+      const fallback = new Date(s.date + 'T04:00:00');
+      const end = s.sleepEnd ? new Date(s.sleepEnd) : null;
+      return end && !isNaN(end.getTime()) ? end : fallback;
+    },
+
     async trySaveQuantity(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<boolean> {
       try {
         // Check HealthKit for existing data first to prevent duplicates
