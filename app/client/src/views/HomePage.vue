@@ -49,7 +49,7 @@
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(14)">Restore 14d</ion-button>
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30d</ion-button>
           <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
-          <ion-button size="small" fill="outline" @click="resyncRecoveryHistory(30)">Re-sync HRV/SpO2/Temp 30d</ion-button>
+          <ion-button size="small" fill="outline" @click="resyncRecoveryHistory(30)">Re-sync HRV/SpO2 30d</ion-button>
         </div>
       </div>
 
@@ -284,7 +284,7 @@ export default defineComponent({
         const available = await this.healthKit.available();
         if (available) {
           // Version the auth request so new permissions trigger a re-ask
-          const HK_AUTH_VERSION = '5';
+          const HK_AUTH_VERSION = '6';
           const hkAuthed = localStorage.getItem('hk_auth_version');
           if (hkAuthed !== HK_AUTH_VERSION) {
             const allTypes = [
@@ -298,7 +298,6 @@ export default defineComponent({
               'HKQuantityTypeIdentifierOxygenSaturation',
               'HKQuantityTypeIdentifierRespiratoryRate',
               'HKQuantityTypeIdentifierVO2Max',
-              'HKQuantityTypeIdentifierAppleSleepingWristTemperature',
               'HKCategoryTypeIdentifierSleepAnalysis',
               'HKWorkoutTypeIdentifier',
             ];
@@ -464,25 +463,24 @@ export default defineComponent({
     async resyncRecoveryHistory(days = 30) {
       const HRV_TYPE = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
       const SPO2_TYPE = 'HKQuantityTypeIdentifierOxygenSaturation';
-      const TEMP_TYPE = 'HKQuantityTypeIdentifierAppleSleepingWristTemperature';
       try {
-        this.sleepError = 'Deleting old HRV / SpO2 / temperature samples...';
+        this.sleepError = 'Deleting old HRV / SpO2 samples...';
         let deleted = 0;
-        for (const t of [HRV_TYPE, SPO2_TYPE, TEMP_TYPE]) {
+        for (const t of [HRV_TYPE, SPO2_TYPE]) {
           try {
             const r = await SleepPlugin.deleteAppQuantitySamples({ sampleType: t });
             deleted += r.deleted;
           } catch {}
         }
 
-        let hrvSaved = 0, spo2Saved = 0, tempSaved = 0, errors = 0;
+        let hrvSaved = 0, spo2Saved = 0, errors = 0;
         for (let i = 0; i < days; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           const dateStr = this.formatDateStr(d);
           this.sleepError = `Re-syncing ${dateStr} (${i + 1}/${days})...`;
           try {
-            const { hrvDaily, spo2, skinTemp, sleepEnd } = await fitbit.fetchOvernightMetrics(dateStr);
+            const { hrvDaily, spo2, sleepEnd } = await fitbit.fetchOvernightMetrics(dateStr);
             const wake = this.overnightTimestamp({ date: dateStr, sleepEnd });
             const wakeEnd = new Date(wake.getTime() + 1000);
 
@@ -494,19 +492,15 @@ export default defineComponent({
               this.markItemSaved(dateStr, 'spo2');
               spo2Saved++;
             }
-            if (skinTemp != null && await this.saveWristTemp(skinTemp, wake)) {
-              this.markItemSaved(dateStr, 'skinTemp');
-              tempSaved++;
-            }
           } catch (e: any) {
             errors++;
             if (e?.message?.includes('429') || e?.message?.includes('rate')) {
-              this.sleepError = `Rate limited at ${dateStr}. Wait 1h and retry. Saved so far — HRV ${hrvSaved}, SpO2 ${spo2Saved}, temp ${tempSaved}`;
+              this.sleepError = `Rate limited at ${dateStr}. Wait 1h and retry. Saved so far — HRV ${hrvSaved}, SpO2 ${spo2Saved}`;
               return;
             }
           }
         }
-        this.sleepError = `Re-sync complete: deleted ${deleted}, saved HRV ${hrvSaved}, SpO2 ${spo2Saved}, temp ${tempSaved} day(s), ${errors} errors`;
+        this.sleepError = `Re-sync complete: deleted ${deleted}, saved HRV ${hrvSaved}, SpO2 ${spo2Saved} day(s), ${errors} errors`;
       } catch (e: any) {
         this.sleepError = 'Re-sync failed: ' + (e?.message || String(e));
       }
@@ -781,18 +775,6 @@ export default defineComponent({
         }
       }
 
-      // Wrist temperature
-      // Fitbit only reports a relative nightly deviation (°C from personal baseline); Apple's
-      // sleeping wrist temperature is absolute. Store baseline + deviation so the day-to-day
-      // variation recovery apps read matches Fitbit; Bevel computes its own baseline, so the
-      // absolute offset is cosmetic. Saved via the native plugin because the telerik one
-      // predates this iOS 16 type. Stamped at wake time to land inside the sleep window.
-      if (s.skinTemp != null && !alreadySaved.includes('skinTemp')) {
-        if (await this.saveWristTemp(s.skinTemp, this.overnightTimestamp(s))) {
-          this.markItemSaved(s.date, 'skinTemp');
-          saved.push('wrist temp');
-        }
-      }
 
       // Sleep - save per-stage samples (deep/light/rem/wake) from all main-sleep logs.
       // Plugin deletes overlapping app-authored samples in the night window before writing
@@ -879,26 +861,6 @@ export default defineComponent({
       const fallback = new Date(s.date + 'T04:00:00');
       const end = s.sleepEnd ? new Date(s.sleepEnd) : null;
       return end && !isNaN(end.getTime()) ? end : fallback;
-    },
-
-    // Save a Fitbit relative wrist-temperature deviation as an absolute Apple sleeping wrist
-    // temperature (baseline + deviation). Returns false on failure rather than throwing.
-    async saveWristTemp(relativeC: number, when: Date): Promise<boolean> {
-      const WRIST_TEMP_BASELINE_C = 35.0; // nominal; only the deviation carries signal
-      try {
-        const start = Math.floor(when.getTime() / 1000);
-        await SleepPlugin.saveQuantitySample({
-          sampleType: 'HKQuantityTypeIdentifierAppleSleepingWristTemperature',
-          unit: 'degC',
-          amount: WRIST_TEMP_BASELINE_C + relativeC,
-          startDate: start,
-          endDate: start + 1,
-        });
-        return true;
-      } catch (e) {
-        console.error('Save wrist temp failed:', e);
-        return false;
-      }
     },
 
     async trySaveQuantity(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<boolean> {
