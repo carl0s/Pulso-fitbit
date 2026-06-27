@@ -95,51 +95,6 @@ public class SleepPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
-    // Generic quantity-sample save. Used for HealthKit types the old telerik plugin doesn't
-    // know about (e.g. the iOS 16 AppleSleepingWristTemperature). Requests share/read
-    // authorization for the specific type inline so the permission prompt is guaranteed.
-    @objc func saveQuantitySample(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            call.reject("HealthKit not available")
-            return
-        }
-        guard let typeId = call.getString("sampleType"),
-              let unitStr = call.getString("unit"),
-              let amount = call.getDouble("amount"),
-              let start = call.getDouble("startDate"),
-              let end = call.getDouble("endDate") else {
-            call.reject("sampleType, unit, amount, startDate, endDate are required")
-            return
-        }
-        guard let quantityType = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeId)) else {
-            call.reject("Unknown quantity type: \(typeId)")
-            return
-        }
-
-        let unit = HKUnit(from: unitStr)
-        let quantity = HKQuantity(unit: unit, doubleValue: amount)
-        let sample = HKQuantitySample(
-            type: quantityType,
-            quantity: quantity,
-            start: Date(timeIntervalSince1970: start),
-            end: Date(timeIntervalSince1970: end)
-        )
-
-        healthStore.requestAuthorization(toShare: [quantityType], read: [quantityType]) { success, error in
-            if !success {
-                call.reject("Permission denied for \(typeId): \(error?.localizedDescription ?? "user denied")")
-                return
-            }
-            self.healthStore.save(sample) { ok, saveError in
-                if ok {
-                    call.resolve(["saved": true])
-                } else {
-                    call.reject("Save failed: \(saveError?.localizedDescription ?? "unknown")")
-                }
-            }
-        }
-    }
-
     @objc func saveSleepStages(_ call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("HealthKit not available")

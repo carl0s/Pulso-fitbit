@@ -468,20 +468,17 @@ function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Lightweight fetch for the overnight-metrics re-sync: HRV (daily RMSSD), SpO2, relative
-// skin temperature, and the main-sleep wake time (used to stamp samples inside the overnight
-// window). Avoids the full daily summary so a multi-day re-sync stays under Fitbit's hourly
-// rate limit. Throws on HTTP 429 so the caller can stop and report a rate-limit instead of
-// silently skipping days.
+// Lightweight fetch for the overnight-metrics re-sync: HRV (daily RMSSD), SpO2, and the
+// main-sleep wake time (used to stamp samples inside the overnight window). Avoids the full
+// daily summary so a multi-day re-sync stays under Fitbit's hourly rate limit. Throws on
+// HTTP 429 so the caller can stop and report a rate-limit instead of silently skipping days.
 export async function fetchOvernightMetrics(dateStr: string): Promise<{
   hrvDaily: number | null;
   spo2: number | null;
-  skinTemp: number | null;
   sleepEnd: string | null;
 }> {
   let hrvDaily: number | null = null;
   let spo2: number | null = null;
-  let skinTemp: number | null = null;
   let sleepEnd: string | null = null;
 
   const hrvRes = await fitbitFetch(`https://api.fitbit.com/1/user/-/hrv/date/${dateStr}.json`);
@@ -498,13 +495,6 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
     spo2 = spo2Data.value?.avg || spo2Data.value || null;
   }
 
-  const tempRes = await fitbitFetch(`https://api.fitbit.com/1/user/-/temp/skin/date/${dateStr}.json`);
-  if (tempRes.status === 429) throw new Error('429 rate limited');
-  if (tempRes.ok) {
-    const tempData = await tempRes.json();
-    skinTemp = tempData.tempSkin?.[0]?.value?.nightlyRelative ?? null;
-  }
-
   const sleepRes = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${dateStr}.json`);
   if (sleepRes.status === 429) throw new Error('429 rate limited');
   if (sleepRes.ok) {
@@ -514,7 +504,7 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
     if (mainSleep) sleepEnd = mainSleep.endTime;
   }
 
-  return { hrvDaily, spo2, skinTemp, sleepEnd };
+  return { hrvDaily, spo2, sleepEnd };
 }
 
 export let lastApiDebug = '';
