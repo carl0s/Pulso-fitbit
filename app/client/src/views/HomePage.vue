@@ -50,6 +50,7 @@
           <ion-button size="small" fill="outline" @click="restoreSleepHistory(30)">Restore 30d</ion-button>
           <ion-button size="small" fill="outline" @click="resetSleepData()">Reset &amp; Resave</ion-button>
           <ion-button size="small" fill="outline" @click="resyncRecoveryHistory(30)">Re-sync HRV/SpO2 30d</ion-button>
+          <ion-button size="small" fill="outline" @click="testOvernightFetch()">Test ieri</ion-button>
         </div>
       </div>
 
@@ -518,6 +519,24 @@ export default defineComponent({
       } catch (e: any) {
         this.sleepError = 'Re-sync failed: ' + (e?.message || String(e));
       }
+    },
+    // One-shot probe: fetch yesterday + 2-days-ago directly and show the raw HTTP status and
+    // value for HRV/SpO2. Pinpoints whether the API returns data, errors, or empty — without
+    // touching HealthKit. Yesterday's overnight data is reliably available by daytime.
+    async testOvernightFetch() {
+      const parts: string[] = [];
+      for (const offset of [1, 2]) {
+        const d = new Date();
+        d.setDate(d.getDate() - offset);
+        const dateStr = this.formatDateStr(d);
+        try {
+          const m = await fitbit.fetchOvernightMetrics(dateStr);
+          parts.push(`${dateStr}: HRV http=${m.hrvStatus} val=${m.hrvDaily} | SpO2 http=${m.spo2Status} val=${m.spo2}`);
+        } catch (e: any) {
+          parts.push(`${dateStr}: EXCEPTION ${e?.message || e}`);
+        }
+      }
+      this.sleepError = 'TEST ' + parts.join('  ||  ');
     },
     scheduleSleepRetry() {
       if (this.sleepRetryTimerId) clearTimeout(this.sleepRetryTimerId);
