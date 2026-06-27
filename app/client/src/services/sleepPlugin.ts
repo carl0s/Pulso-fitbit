@@ -18,6 +18,13 @@ interface SleepPluginInterface {
     startDate?: number;   // unix seconds, optional window start
     endDate?: number;     // unix seconds, optional window end
   }): Promise<{ deleted: number }>;
+  saveQuantitySample(options: {
+    sampleType: string;   // HKQuantityTypeIdentifier
+    unit: string;         // HKUnit string, e.g. 'degC', '%', 'ms'
+    amount: number;
+    startDate: number;    // unix seconds
+    endDate: number;      // unix seconds
+  }): Promise<{ saved: boolean }>;
 }
 
 const SleepPlugin = registerPlugin<SleepPluginInterface>('SleepPlugin');
