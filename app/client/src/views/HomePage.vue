@@ -465,17 +465,10 @@ export default defineComponent({
       const HRV_TYPE = 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN';
       const SPO2_TYPE = 'HKQuantityTypeIdentifierOxygenSaturation';
       try {
-        this.sleepError = 'Deleting old HRV / SpO2 samples...';
-        let deleted = 0;
-        for (const t of [HRV_TYPE, SPO2_TYPE]) {
-          try {
-            const r = await SleepPlugin.deleteAppQuantitySamples({ sampleType: t });
-            deleted += r.deleted;
-          } catch {}
-        }
-
-        // Fetch the whole window in 3 calls (range endpoints) instead of ~90 — avoids the
-        // hourly rate limit entirely.
+        // NON-destructive: we no longer delete existing samples first. Deleting then failing
+        // to re-write was wiping working HRV data. hasExistingData() inside the save skips
+        // exact-timestamp duplicates, so re-running is safe.
+        // Fetch the whole window in 3 calls (range endpoints) — avoids the hourly rate limit.
         const endStr = this.formatDateStr(new Date());
         const startD = new Date();
         startD.setDate(startD.getDate() - (days - 1));
@@ -498,7 +491,8 @@ export default defineComponent({
 
         const hrvAvail = Object.keys(hrvMap).length;
         const spo2Avail = Object.keys(spo2Map).length;
-        let hrvSaved = 0, spo2Saved = 0, saveFail = 0;
+        let hrvSaved = 0, spo2Saved = 0, hrvFail = 0, spo2Fail = 0;
+        let hrvErr = '', spo2Err = '';
         for (let i = 0; i < days; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
@@ -507,19 +501,20 @@ export default defineComponent({
           const wakeEnd = new Date(wake.getTime() + 1000);
 
           if (hrvMap[dateStr]) {
-            if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvMap[dateStr], wake, wakeEnd)) {
-              this.markItemSaved(dateStr, 'hrv');
-              hrvSaved++;
-            } else saveFail++;
+            const r = await this.saveQuantityResult(HRV_TYPE, 'ms', hrvMap[dateStr], wake, wakeEnd);
+            if (r.ok) { this.markItemSaved(dateStr, 'hrv'); hrvSaved++; }
+            else { hrvFail++; if (!hrvErr) hrvErr = r.err || '?'; }
           }
           if (spo2Map[dateStr]) {
-            if (await this.trySaveQuantity(SPO2_TYPE, '%', spo2Map[dateStr] / 100, wake, wakeEnd)) {
-              this.markItemSaved(dateStr, 'spo2');
-              spo2Saved++;
-            } else saveFail++;
+            const r = await this.saveQuantityResult(SPO2_TYPE, '%', spo2Map[dateStr] / 100, wake, wakeEnd);
+            if (r.ok) { this.markItemSaved(dateStr, 'spo2'); spo2Saved++; }
+            else { spo2Fail++; if (!spo2Err) spo2Err = r.err || '?'; }
           }
         }
-        this.sleepError = `Re-sync: deleted ${deleted} | HRV avail ${hrvAvail} saved ${hrvSaved}, SpO2 avail ${spo2Avail} saved ${spo2Saved} | saveFail ${saveFail}, http HRV=${hrvStatus} SpO2=${spo2Status}`;
+        this.sleepError =
+          `HRV avail ${hrvAvail} saved ${hrvSaved} fail ${hrvFail}${hrvErr ? ` [${hrvErr}]` : ''} | ` +
+          `SpO2 avail ${spo2Avail} saved ${spo2Saved} fail ${spo2Fail}${spo2Err ? ` [${spo2Err}]` : ''} | ` +
+          `http HRV=${hrvStatus} SpO2=${spo2Status}`;
       } catch (e: any) {
         this.sleepError = 'Re-sync failed: ' + (e?.message || String(e));
       }
@@ -919,6 +914,22 @@ export default defineComponent({
       } catch (e) {
         console.error(`Save ${sampleType} failed:`, e);
         return false;
+      }
+    },
+
+    // Like trySaveQuantity but surfaces the real failure reason (HealthKit error message)
+    // instead of swallowing it — used by the re-sync to report WHY a write was rejected.
+    async saveQuantityResult(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<{ ok: boolean; err?: string }> {
+      try {
+        if (await this.hasExistingData(sampleType, unit, startDate, endDate)) return { ok: true };
+        await this.healthKit.saveQuantitySample({
+          startDate: Math.floor(startDate.getTime() / 1000),
+          endDate: Math.floor(endDate.getTime() / 1000),
+          sampleType, unit, amount,
+        });
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, err: (e?.message || String(e)).slice(0, 80) };
       }
     },
 
