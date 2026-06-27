@@ -485,14 +485,12 @@ export default defineComponent({
             const { hrvDaily, spo2, skinTemp, sleepEnd } = await fitbit.fetchOvernightMetrics(dateStr);
             const wake = this.overnightTimestamp({ date: dateStr, sleepEnd });
             const wakeEnd = new Date(wake.getTime() + 1000);
-            const night = new Date(dateStr + 'T04:00:00');
-            const nightEnd = new Date(dateStr + 'T04:00:01');
 
             if (hrvDaily && await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, wake, wakeEnd)) {
               this.markItemSaved(dateStr, 'hrv');
               hrvSaved++;
             }
-            if (spo2 && await this.trySaveQuantity(SPO2_TYPE, '%', spo2 / 100, night, nightEnd)) {
+            if (spo2 && await this.trySaveQuantity(SPO2_TYPE, '%', spo2 / 100, wake, wakeEnd)) {
               this.markItemSaved(dateStr, 'spo2');
               spo2Saved++;
             }
@@ -752,11 +750,12 @@ export default defineComponent({
         }
       }
 
-      // SpO2
+      // SpO2 — stamped at wake time (inside the detected sleep session) like HRV, instead of
+      // a fixed 04:00 that can fall at the edge of or outside the night Bevel recognizes.
       if (s.spo2 && !alreadySaved.includes('spo2')) {
-        const night = new Date(s.date + 'T04:00:00');
-        const nightEnd = new Date(s.date + 'T04:00:01');
-        if (await this.trySaveQuantity('HKQuantityTypeIdentifierOxygenSaturation', '%', s.spo2 / 100, night, nightEnd)) {
+        const spo2Time = this.overnightTimestamp(s);
+        const spo2End = new Date(spo2Time.getTime() + 1000);
+        if (await this.trySaveQuantity('HKQuantityTypeIdentifierOxygenSaturation', '%', s.spo2 / 100, spo2Time, spo2End)) {
           this.markItemSaved(s.date, 'spo2');
           saved.push('SpO2');
         }
