@@ -509,6 +509,53 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
   return { hrvDaily, spo2, sleepEnd, hrvStatus: hrvRes.status, spo2Status: spo2Res.status };
 }
 
+// Range fetches: one Fitbit call returns every day in [startStr, endStr], so a 30-day
+// backfill costs 3 calls total instead of ~90 (avoids the hourly rate limit). Each returns
+// a { date -> value } map plus the HTTP status for diagnostics. Throw on 429.
+export async function fetchHrvRange(startStr: string, endStr: string): Promise<{ map: Record<string, number>; status: number }> {
+  const res = await fitbitFetch(`https://api.fitbit.com/1/user/-/hrv/date/${startStr}/${endStr}.json`);
+  if (res.status === 429) throw new Error('429 rate limited');
+  const map: Record<string, number> = {};
+  if (res.ok) {
+    const data = await res.json();
+    for (const e of (data.hrv || [])) {
+      const v = e?.value?.dailyRmssd;
+      if (v != null && e.dateTime) map[e.dateTime] = v;
+    }
+  }
+  return { map, status: res.status };
+}
+
+export async function fetchSpo2Range(startStr: string, endStr: string): Promise<{ map: Record<string, number>; status: number }> {
+  const res = await fitbitFetch(`https://api.fitbit.com/1/user/-/spo2/date/${startStr}/${endStr}.json`);
+  if (res.status === 429) throw new Error('429 rate limited');
+  const map: Record<string, number> = {};
+  if (res.ok) {
+    const data = await res.json();
+    // Range endpoint returns an array; single-date returns an object — handle both.
+    const arr = Array.isArray(data) ? data : (data?.dateTime ? [data] : []);
+    for (const e of arr) {
+      const v = e?.value?.avg;
+      if (v != null && e.dateTime) map[e.dateTime] = v;
+    }
+  }
+  return { map, status: res.status };
+}
+
+// Wake time per night (end of main sleep), keyed by the date the sleep is attributed to.
+export async function fetchSleepEndRange(startStr: string, endStr: string): Promise<Record<string, string>> {
+  const res = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${startStr}/${endStr}.json`);
+  if (res.status === 429) throw new Error('429 rate limited');
+  const map: Record<string, string> = {};
+  if (res.ok) {
+    const data = await res.json();
+    for (const log of (data.sleep || [])) {
+      if (log.isMainSleep && log.dateOfSleep && log.endTime) map[log.dateOfSleep] = log.endTime;
+    }
+  }
+  return map;
+}
+
 export let lastApiDebug = '';
 
 export async function fetchWorkouts(): Promise<any[]> {
