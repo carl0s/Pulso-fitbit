@@ -490,7 +490,7 @@ export default defineComponent({
           sleepMap = await fitbit.fetchSleepEndRange(startStr, endStr);
         } catch (e: any) {
           if (e?.message?.includes('429') || e?.message?.includes('rate')) {
-            this.sleepError = 'Rate limited fetching ranges. Wait 1h and retry.';
+            this.sleepError = `Rate limited — ${e.message.replace('429 rate limited', '').replace(/^[;,\s]+/, '') || 'wait ~1h'}. Turn off Auto Sync, then retry.`;
             return;
           }
           throw e;
