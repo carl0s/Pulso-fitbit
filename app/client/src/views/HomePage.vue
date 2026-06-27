@@ -474,48 +474,52 @@ export default defineComponent({
           } catch {}
         }
 
-        // Diagnostic counters to pin down why a day saves nothing:
-        //  hrvData  = days Fitbit returned an HRV value
-        //  saveFail = had a value but the HealthKit write failed
-        //  badHttp  = HRV/SpO2 call returned a non-200 status (auth/scope/etc.)
-        let hrvSaved = 0, spo2Saved = 0, errors = 0;
-        let hrvData = 0, spo2Data = 0, saveFail = 0, badHttp = 0, lastBad = 0;
+        // Fetch the whole window in 3 calls (range endpoints) instead of ~90 — avoids the
+        // hourly rate limit entirely.
+        const endStr = this.formatDateStr(new Date());
+        const startD = new Date();
+        startD.setDate(startD.getDate() - (days - 1));
+        const startStr = this.formatDateStr(startD);
+
+        this.sleepError = 'Fetching HRV / SpO2 / sleep ranges...';
+        let hrvMap: Record<string, number> = {}, spo2Map: Record<string, number> = {}, sleepMap: Record<string, string> = {};
+        let hrvStatus = 0, spo2Status = 0;
+        try {
+          ({ map: hrvMap, status: hrvStatus } = await fitbit.fetchHrvRange(startStr, endStr));
+          ({ map: spo2Map, status: spo2Status } = await fitbit.fetchSpo2Range(startStr, endStr));
+          sleepMap = await fitbit.fetchSleepEndRange(startStr, endStr);
+        } catch (e: any) {
+          if (e?.message?.includes('429') || e?.message?.includes('rate')) {
+            this.sleepError = 'Rate limited fetching ranges. Wait 1h and retry.';
+            return;
+          }
+          throw e;
+        }
+
+        const hrvAvail = Object.keys(hrvMap).length;
+        const spo2Avail = Object.keys(spo2Map).length;
+        let hrvSaved = 0, spo2Saved = 0, saveFail = 0;
         for (let i = 0; i < days; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           const dateStr = this.formatDateStr(d);
-          this.sleepError = `Re-syncing ${dateStr} (${i + 1}/${days})...`;
-          try {
-            const { hrvDaily, spo2, sleepEnd, hrvStatus, spo2Status } = await fitbit.fetchOvernightMetrics(dateStr);
-            const wake = this.overnightTimestamp({ date: dateStr, sleepEnd });
-            const wakeEnd = new Date(wake.getTime() + 1000);
+          const wake = this.overnightTimestamp({ date: dateStr, sleepEnd: sleepMap[dateStr] || null });
+          const wakeEnd = new Date(wake.getTime() + 1000);
 
-            if (hrvStatus !== 200) { badHttp++; lastBad = hrvStatus; }
-            if (spo2Status !== 200) { badHttp++; lastBad = spo2Status; }
-
-            if (hrvDaily) {
-              hrvData++;
-              if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, wake, wakeEnd)) {
-                this.markItemSaved(dateStr, 'hrv');
-                hrvSaved++;
-              } else saveFail++;
-            }
-            if (spo2) {
-              spo2Data++;
-              if (await this.trySaveQuantity(SPO2_TYPE, '%', spo2 / 100, wake, wakeEnd)) {
-                this.markItemSaved(dateStr, 'spo2');
-                spo2Saved++;
-              } else saveFail++;
-            }
-          } catch (e: any) {
-            errors++;
-            if (e?.message?.includes('429') || e?.message?.includes('rate')) {
-              this.sleepError = `Rate limited at ${dateStr}. Wait 1h and retry. Saved so far — HRV ${hrvSaved}, SpO2 ${spo2Saved}`;
-              return;
-            }
+          if (hrvMap[dateStr]) {
+            if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvMap[dateStr], wake, wakeEnd)) {
+              this.markItemSaved(dateStr, 'hrv');
+              hrvSaved++;
+            } else saveFail++;
+          }
+          if (spo2Map[dateStr]) {
+            if (await this.trySaveQuantity(SPO2_TYPE, '%', spo2Map[dateStr] / 100, wake, wakeEnd)) {
+              this.markItemSaved(dateStr, 'spo2');
+              spo2Saved++;
+            } else saveFail++;
           }
         }
-        this.sleepError = `Re-sync: deleted ${deleted} | HRV data ${hrvData}/${days} saved ${hrvSaved}, SpO2 data ${spo2Data} saved ${spo2Saved} | saveFail ${saveFail}, badHTTP ${badHttp}${lastBad ? ` (last ${lastBad})` : ''}, errors ${errors}`;
+        this.sleepError = `Re-sync: deleted ${deleted} | HRV avail ${hrvAvail} saved ${hrvSaved}, SpO2 avail ${spo2Avail} saved ${spo2Saved} | saveFail ${saveFail}, http HRV=${hrvStatus} SpO2=${spo2Status}`;
       } catch (e: any) {
         this.sleepError = 'Re-sync failed: ' + (e?.message || String(e));
       }
