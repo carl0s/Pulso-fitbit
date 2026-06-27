@@ -257,6 +257,14 @@ async function fitbitFetch(url: string): Promise<Response> {
   });
 }
 
+// Build a 429 error that includes Fitbit's own retry window (Retry-After / rate-limit-reset
+// seconds), so the UI can tell the user exactly how long to wait instead of guessing.
+function rateLimitError(res: Response): Error {
+  const raw = res.headers.get('retry-after') || res.headers.get('fitbit-rate-limit-reset');
+  const secs = raw ? parseInt(raw, 10) : NaN;
+  return new Error(isNaN(secs) ? '429 rate limited' : `429 rate limited; retry in ${Math.max(1, Math.ceil(secs / 60))} min`);
+}
+
 // --- Daily summary & extra data ---
 
 export interface HeartRateZone {
@@ -484,21 +492,21 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
   let sleepEnd: string | null = null;
 
   const hrvRes = await fitbitFetch(`https://api.fitbit.com/1/user/-/hrv/date/${dateStr}.json`);
-  if (hrvRes.status === 429) throw new Error('429 rate limited');
+  if (hrvRes.status === 429) throw rateLimitError(hrvRes);
   if (hrvRes.ok) {
     const hrvData = await hrvRes.json();
     hrvDaily = hrvData.hrv?.[0]?.value?.dailyRmssd || null;
   }
 
   const spo2Res = await fitbitFetch(`https://api.fitbit.com/1/user/-/spo2/date/${dateStr}.json`);
-  if (spo2Res.status === 429) throw new Error('429 rate limited');
+  if (spo2Res.status === 429) throw rateLimitError(spo2Res);
   if (spo2Res.ok) {
     const spo2Data = await spo2Res.json();
     spo2 = spo2Data.value?.avg || spo2Data.value || null;
   }
 
   const sleepRes = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${dateStr}.json`);
-  if (sleepRes.status === 429) throw new Error('429 rate limited');
+  if (sleepRes.status === 429) throw rateLimitError(sleepRes);
   if (sleepRes.ok) {
     const sleepData = await sleepRes.json();
     const logs = sleepData.sleep || [];
@@ -514,7 +522,7 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
 // a { date -> value } map plus the HTTP status for diagnostics. Throw on 429.
 export async function fetchHrvRange(startStr: string, endStr: string): Promise<{ map: Record<string, number>; status: number }> {
   const res = await fitbitFetch(`https://api.fitbit.com/1/user/-/hrv/date/${startStr}/${endStr}.json`);
-  if (res.status === 429) throw new Error('429 rate limited');
+  if (res.status === 429) throw rateLimitError(res);
   const map: Record<string, number> = {};
   if (res.ok) {
     const data = await res.json();
@@ -528,7 +536,7 @@ export async function fetchHrvRange(startStr: string, endStr: string): Promise<{
 
 export async function fetchSpo2Range(startStr: string, endStr: string): Promise<{ map: Record<string, number>; status: number }> {
   const res = await fitbitFetch(`https://api.fitbit.com/1/user/-/spo2/date/${startStr}/${endStr}.json`);
-  if (res.status === 429) throw new Error('429 rate limited');
+  if (res.status === 429) throw rateLimitError(res);
   const map: Record<string, number> = {};
   if (res.ok) {
     const data = await res.json();
@@ -545,7 +553,7 @@ export async function fetchSpo2Range(startStr: string, endStr: string): Promise<
 // Wake time per night (end of main sleep), keyed by the date the sleep is attributed to.
 export async function fetchSleepEndRange(startStr: string, endStr: string): Promise<Record<string, string>> {
   const res = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${startStr}/${endStr}.json`);
-  if (res.status === 429) throw new Error('429 rate limited');
+  if (res.status === 429) throw rateLimitError(res);
   const map: Record<string, string> = {};
   if (res.ok) {
     const data = await res.json();
