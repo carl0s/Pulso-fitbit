@@ -476,6 +476,8 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
   hrvDaily: number | null;
   spo2: number | null;
   sleepEnd: string | null;
+  hrvStatus: number;   // HTTP status of the HRV call (diagnostic)
+  spo2Status: number;  // HTTP status of the SpO2 call (diagnostic)
 }> {
   let hrvDaily: number | null = null;
   let spo2: number | null = null;
@@ -504,7 +506,7 @@ export async function fetchOvernightMetrics(dateStr: string): Promise<{
     if (mainSleep) sleepEnd = mainSleep.endTime;
   }
 
-  return { hrvDaily, spo2, sleepEnd };
+  return { hrvDaily, spo2, sleepEnd, hrvStatus: hrvRes.status, spo2Status: spo2Res.status };
 }
 
 export let lastApiDebug = '';

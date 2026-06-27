@@ -473,24 +473,38 @@ export default defineComponent({
           } catch {}
         }
 
+        // Diagnostic counters to pin down why a day saves nothing:
+        //  hrvData  = days Fitbit returned an HRV value
+        //  saveFail = had a value but the HealthKit write failed
+        //  badHttp  = HRV/SpO2 call returned a non-200 status (auth/scope/etc.)
         let hrvSaved = 0, spo2Saved = 0, errors = 0;
+        let hrvData = 0, spo2Data = 0, saveFail = 0, badHttp = 0, lastBad = 0;
         for (let i = 0; i < days; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           const dateStr = this.formatDateStr(d);
           this.sleepError = `Re-syncing ${dateStr} (${i + 1}/${days})...`;
           try {
-            const { hrvDaily, spo2, sleepEnd } = await fitbit.fetchOvernightMetrics(dateStr);
+            const { hrvDaily, spo2, sleepEnd, hrvStatus, spo2Status } = await fitbit.fetchOvernightMetrics(dateStr);
             const wake = this.overnightTimestamp({ date: dateStr, sleepEnd });
             const wakeEnd = new Date(wake.getTime() + 1000);
 
-            if (hrvDaily && await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, wake, wakeEnd)) {
-              this.markItemSaved(dateStr, 'hrv');
-              hrvSaved++;
+            if (hrvStatus !== 200) { badHttp++; lastBad = hrvStatus; }
+            if (spo2Status !== 200) { badHttp++; lastBad = spo2Status; }
+
+            if (hrvDaily) {
+              hrvData++;
+              if (await this.trySaveQuantity(HRV_TYPE, 'ms', hrvDaily, wake, wakeEnd)) {
+                this.markItemSaved(dateStr, 'hrv');
+                hrvSaved++;
+              } else saveFail++;
             }
-            if (spo2 && await this.trySaveQuantity(SPO2_TYPE, '%', spo2 / 100, wake, wakeEnd)) {
-              this.markItemSaved(dateStr, 'spo2');
-              spo2Saved++;
+            if (spo2) {
+              spo2Data++;
+              if (await this.trySaveQuantity(SPO2_TYPE, '%', spo2 / 100, wake, wakeEnd)) {
+                this.markItemSaved(dateStr, 'spo2');
+                spo2Saved++;
+              } else saveFail++;
             }
           } catch (e: any) {
             errors++;
@@ -500,7 +514,7 @@ export default defineComponent({
             }
           }
         }
-        this.sleepError = `Re-sync complete: deleted ${deleted}, saved HRV ${hrvSaved}, SpO2 ${spo2Saved} day(s), ${errors} errors`;
+        this.sleepError = `Re-sync: deleted ${deleted} | HRV data ${hrvData}/${days} saved ${hrvSaved}, SpO2 data ${spo2Data} saved ${spo2Saved} | saveFail ${saveFail}, badHTTP ${badHttp}${lastBad ? ` (last ${lastBad})` : ''}, errors ${errors}`;
       } catch (e: any) {
         this.sleepError = 'Re-sync failed: ' + (e?.message || String(e));
       }
