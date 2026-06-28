@@ -911,10 +911,10 @@ export default defineComponent({
           console.log(`Skipping ${sampleType} - already exists in HealthKit`);
           return true; // Count as "saved" since it's already there
         }
-        // Plugin expects Unix timestamps in seconds
+        // Plugin requires JavaScript Date objects (same as saveWorkout), NOT unix seconds.
         await this.healthKit.saveQuantitySample({
-          startDate: Math.floor(startDate.getTime() / 1000),
-          endDate: Math.floor(endDate.getTime() / 1000),
+          startDate: startDate,
+          endDate: endDate,
           sampleType: sampleType,
           unit: unit,
           amount: amount,
@@ -931,9 +931,10 @@ export default defineComponent({
     async saveQuantityResult(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<{ ok: boolean; err?: string }> {
       try {
         if (await this.hasExistingData(sampleType, unit, startDate, endDate)) return { ok: true };
+        // Plugin requires JavaScript Date objects, NOT unix seconds.
         await this.healthKit.saveQuantitySample({
-          startDate: Math.floor(startDate.getTime() / 1000),
-          endDate: Math.floor(endDate.getTime() / 1000),
+          startDate: startDate,
+          endDate: endDate,
           sampleType, unit, amount,
         });
         return { ok: true };
