@@ -475,12 +475,13 @@ export default defineComponent({
         const startStr = this.formatDateStr(startD);
 
         this.sleepError = 'Fetching HRV / SpO2 / sleep ranges...';
-        let hrvMap: Record<string, number> = {}, spo2Map: Record<string, number> = {}, sleepMap: Record<string, string> = {};
+        let hrvMap: Record<string, number> = {}, spo2Map: Record<string, number> = {};
+        let sleepMap: Record<string, { start: string; end: string }> = {};
         let hrvStatus = 0, spo2Status = 0;
         try {
           ({ map: hrvMap, status: hrvStatus } = await fitbit.fetchHrvRange(startStr, endStr));
           ({ map: spo2Map, status: spo2Status } = await fitbit.fetchSpo2Range(startStr, endStr));
-          sleepMap = await fitbit.fetchSleepEndRange(startStr, endStr);
+          sleepMap = await fitbit.fetchSleepRange(startStr, endStr);
         } catch (e: any) {
           if (e?.message?.includes('429') || e?.message?.includes('rate')) {
             this.sleepError = `Rate limited — ${e.message.replace('429 rate limited', '').replace(/^[;,\s]+/, '') || 'wait ~1h'}. Turn off Auto Sync, then retry.`;
@@ -497,7 +498,8 @@ export default defineComponent({
           const d = new Date();
           d.setDate(d.getDate() - i);
           const dateStr = this.formatDateStr(d);
-          const wake = this.overnightTimestamp({ date: dateStr, sleepEnd: sleepMap[dateStr] || null });
+          const sl = sleepMap[dateStr];
+          const wake = this.overnightTimestamp({ date: dateStr, sleepStart: sl?.start || null, sleepEnd: sl?.end || null });
           const wakeEnd = new Date(wake.getTime() + 1000);
 
           if (hrvMap[dateStr]) {
@@ -886,13 +888,20 @@ export default defineComponent({
         return false; // Can't check, assume no data
       }
     },
-    // Best timestamp for an overnight/morning metric (HRV): the wake time at the end of
-    // the main sleep, so recovery apps that scan the sleep window pick it up. Falls back to
-    // 04:00 local on the summary date when sleep data is unavailable or unparseable.
+    // Best timestamp for an overnight metric (HRV/SpO2): the MIDDLE of the main sleep, so the
+    // sample sits firmly inside the asleep window that recovery apps (Bevel) scan — a sample
+    // exactly at wake time can land on the sleep/awake boundary and be ignored. Falls back to
+    // 30 min before wake, then to 04:00 local, when full sleep data is unavailable.
     overnightTimestamp(s: any): Date {
-      const fallback = new Date(s.date + 'T04:00:00');
+      const start = s.sleepStart ? new Date(s.sleepStart) : null;
       const end = s.sleepEnd ? new Date(s.sleepEnd) : null;
-      return end && !isNaN(end.getTime()) ? end : fallback;
+      const startOk = start && !isNaN(start.getTime());
+      const endOk = end && !isNaN(end.getTime());
+      if (startOk && endOk && (end as Date).getTime() > (start as Date).getTime()) {
+        return new Date(((start as Date).getTime() + (end as Date).getTime()) / 2);
+      }
+      if (endOk) return new Date((end as Date).getTime() - 30 * 60 * 1000);
+      return new Date(s.date + 'T04:00:00');
     },
 
     async trySaveQuantity(sampleType: string, unit: string, amount: number, startDate: Date, endDate: Date): Promise<boolean> {
