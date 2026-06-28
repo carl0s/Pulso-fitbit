@@ -550,15 +550,19 @@ export async function fetchSpo2Range(startStr: string, endStr: string): Promise<
   return { map, status: res.status };
 }
 
-// Wake time per night (end of main sleep), keyed by the date the sleep is attributed to.
-export async function fetchSleepEndRange(startStr: string, endStr: string): Promise<Record<string, string>> {
+// Main-sleep start/end per night, keyed by the date the sleep is attributed to. Used to
+// place HRV/SpO2 samples mid-sleep (firmly inside the sleep session) so recovery apps that
+// scan the asleep window pick them up.
+export async function fetchSleepRange(startStr: string, endStr: string): Promise<Record<string, { start: string; end: string }>> {
   const res = await fitbitFetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${startStr}/${endStr}.json`);
   if (res.status === 429) throw rateLimitError(res);
-  const map: Record<string, string> = {};
+  const map: Record<string, { start: string; end: string }> = {};
   if (res.ok) {
     const data = await res.json();
     for (const log of (data.sleep || [])) {
-      if (log.isMainSleep && log.dateOfSleep && log.endTime) map[log.dateOfSleep] = log.endTime;
+      if (log.isMainSleep && log.dateOfSleep && log.startTime && log.endTime) {
+        map[log.dateOfSleep] = { start: log.startTime, end: log.endTime };
+      }
     }
   }
   return map;
